@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dependency Graph</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background-color: black;  /*#0f172a;*/ /* slate-900 */
+        }
+        .node-circle {
+            stroke: #fff;
+            stroke-width: 1.5px;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        .node-circle:hover {
+            stroke: #fde047; /* yellow-300 */
+            stroke-width: 2.5px;
+        }
+        .link {
+            stroke: #9ca3af; /* gray-400 */
+            stroke-opacity: 0.6;
+            transition: all 0.2s ease-in-out;
+        }
+        .node-text {
+            fill: #fde047; /* changed to yellow-300 for better visibility */
+            pointer-events: none;
+            user-select: none;
+            text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+        }
+        .toolbar-group {
+            @apply flex items-center space-x-1 sm:space-x-2;
+        }
+        .toolbar-label {
+            @apply text-xs font-semibold whitespace-nowrap;
+        }
+        .toolbar-input {
+            @apply h-6 bg-gray-700 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm;
+        }
+        .toolbar-input[type="range"] {
+            @apply w-20 sm:w-24;
+        }
+        .toolbar-input[type="color"] {
+            @apply w-8 h-6 p-0;
+        }
+        #toggleText {
+            @apply w-4 h-4;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+    <div class="p-2 sm:p-4 bg-gray-800 text-white shadow-lg flex flex-wrap md:flex-row items-center space-y-2 md:space-y-0 md:space-x-4 z-20 overflow-x-auto">
+        <!-- File Upload & Root Node Select -->
+        <div class="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
+            <label for="fileInput" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded-full transition-colors duration-200 cursor-pointer text-xs sm:text-sm">
+                Upload JSON
+            </label>
+            <input type="file" id="fileInput" accept=".json" class="hidden">
+            <label for="rootNodeSelect" class="text-xs sm:text-sm font-semibold whitespace-nowrap">Root Node:</label>
+            <select id="rootNodeSelect" class="w-28 p-1 sm:p-2 bg-gray-700 text-white rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs sm:text-sm">
+                <option value="">Show All</option>
+            </select>
+        </div>
+
+        <!-- Toolbars for Node and Link styling -->
+        <div class="flex flex-wrap items-center space-x-2 sm:space-x-4 flex-grow-0 md:flex-grow justify-start">
+            <!-- Node Size -->
+            <div class="toolbar-group">
+                <label for="nodeSize" class="toolbar-label">Node Size:</label>
+                <input type="range" id="nodeSize" class="toolbar-input" min="5" max="30" value="10">
+            </div>
+            <!-- Node Color -->
+            <div class="toolbar-group">
+                <label for="nodeColor" class="toolbar-label">Node Color:</label>
+                <input type="color" id="nodeColor" class="toolbar-input !p-0" value="#69b3a2">
+            </div>
+            <!-- Link Thickness -->
+            <div class="toolbar-group">
+                <label for="linkThickness" class="toolbar-label">Link Thickness:</label>
+                <input type="range" id="linkThickness" class="toolbar-input" min="1" max="10" value="4">
+            </div>
+            <!-- Link Color -->
+            <div class="toolbar-group">
+                <label for="linkColor" class="toolbar-label">Link Color:</label>
+                <input type="color" id="linkColor" class="toolbar-input !p-0" value="#9ca3af">
+            </div>
+            <!-- Text Color -->
+            <div class="toolbar-group">
+                <label for="textColor" class="toolbar-label">Text Color:</label>
+                <input type="color" id="textColor" class="toolbar-input !p-0" value="#fde047">
+            </div>
+            <!-- Hide/Show Text -->
+            <div class="toolbar-group">
+                <label for="toggleText" class="toolbar-label">Show Text:</label>
+                <input type="checkbox" id="toggleText" class="w-4 h-4 text-indigo-600 rounded" checked>
+            </div>
+             <!-- Top to Bottom -->
+             <div class="toolbar-group">
+                <label for="toggleDirection" class="toolbar-label">Top-to-Bottom:</label>
+                <input type="checkbox" id="toggleDirection" class="w-4 h-4 text-indigo-600 rounded">
+            </div>
+             <!-- Show Disconnected Nodes -->
+             <div class="toolbar-group">
+                <label for="toggleDisconnected" class="toolbar-label">Show Disconnected:</label>
+                <input type="checkbox" id="toggleDisconnected" class="w-4 h-4 text-indigo-600 rounded">
+            </div>
+            <!-- Reset View -->
+            <div class="flex items-center">
+                 <button id="resetViewBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-full transition-colors duration-200 text-xs sm:text-sm">
+                     Reset View
+                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- The SVG container for the D3 graph -->
+    <div id="graph-container" class="flex-grow w-full relative">
+        <svg id="dependency-graph-svg" class="w-full h-full"></svg>
+    </div>
+
+    <script>
+        // Set up D3 constants and variables
+        const container = document.getElementById('graph-container');
+        const svg = d3.select("#dependency-graph-svg");
+        let simulation;
+        let originalGraphData;
+        let g = svg.append("g"); // Initializing the main group 'g'
+        let currentTransform = d3.zoomIdentity; // Store the current zoom/pan state
+        let isTopToBottom = false;
+
+        // Create a zoom behavior and apply it to the SVG
+        const zoom = d3.zoom()
+            .scaleExtent([0.05, 4])
+            .on("zoom", zoomed);
+
+        // Apply zoom behavior to the SVG
+        svg.call(zoom);
+
+        // Zoom function - stores the current transform
+        function zoomed() {
+            g.attr("transform", d3.event.transform);
+            currentTransform = d3.event.transform; // Save the current state
+        }
+        
+        /**
+         * Handles the click event on a node.
+         * It filters the graph to show only the selected node's dependencies.
+         * @param {object} d The data of the clicked node.
+         */
+        function click(d) {
+            // Check if the clicked node has a FilePath property
+            if (d.FilePath) {
+                // Update the dropdown to reflect the clicked node
+                document.getElementById('rootNodeSelect').value = d.id;
+                // Filter and render the graph based on the clicked node's ID
+                filterAndRenderGraph(parseInt(d.id));
+            } else {
+                 console.log("Clicked node has no FilePath property.");
+            }
+        }
+
+
+        /**
+         * Applies the current styles from the toolbar to the graph.
+         */
+        function updateGraphStyles() {
+            if (!originalGraphData) return;
+
+            const nodeSize = document.getElementById('nodeSize').value;
+            const nodeColor = document.getElementById('nodeColor').value;
+            const textColor = document.getElementById('textColor').value;
+            const linkColor = document.getElementById('linkColor').value;
+            const linkThickness = document.getElementById('linkThickness').value;
+            const showText = document.getElementById('toggleText').checked;
+
+            // Apply styles to nodes
+            g.selectAll(".node-circle")
+                .attr("r", nodeSize)
+                .style("fill", nodeColor);
+            
+            // Apply styles to text
+            g.selectAll(".node-text")
+                .style("fill", textColor)
+                .style("opacity", showText ? 1 : 0);
+
+            // Apply styles to links
+            g.selectAll(".link")
+                .attr("stroke-width", linkThickness)
+                .style("stroke", linkColor);
+        }
+
+        /**
+         * Renders the graph based on the provided nodes and links.
+         * @param {array} nodes The array of nodes to render.
+         * @param {array} links The array of links to render.
+         */
+        function renderGraph(nodes, links) {
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            // Clear the old elements without removing the group
+            g.selectAll("*").remove();
+
+            // Re-apply the stored zoom and pan transform
+            svg.call(zoom.transform, currentTransform);
+            
+            // Set SVG container dimensions
+            svg.attr("width", width).attr("height", height);
+
+            // Create the D3 force simulation
+            simulation = d3.forceSimulation(nodes)
+                .force("link", d3.forceLink(links).id(d => d.id).distance(d => d.weight ? 10 / d.weight : 350))
+                .force("charge", d3.forceManyBody().strength(-400))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .on("tick", ticked);
+
+            // Create the links (lines)
+            const link = g.append("g")
+                .attr("class", "links")
+                .selectAll("line")
+                .data(links)
+                .enter().append("line")
+                .attr("class", "link");
+
+            // Create the nodes (circles with text)
+            const node = g.append("g")
+                .attr("class", "nodes")
+                .selectAll("g")
+                .data(nodes)
+                .enter().append("g")
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended))
+                .on("click", click); // Attach the click event listener
+
+            node.append("circle")
+                .attr("class", "node-circle");
+            node.append("title")
+                .text(d => d.shortName || d.id);
+            node.append("text")
+                .attr("class", "node-text")
+                .attr("x", 15)
+                .attr("y", 3)
+                .text(d => d.shortName || d.id)
+                .style("font-size", "12px");
+
+            // After drawing, apply the current toolbar styles
+            updateGraphStyles();
+
+            // Update positions on each tick of the simulation
+            function ticked() {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+
+                node
+                    .attr("transform", d => `translate(${d.x},${d.y})`);
+            }
+        }
+
+        // Drag functions
+        function dragstarted(d) {
+            if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(d) {
+            d.fx = d3.event.x;
+            d.fy = d3.event.y;
+        }
+
+        function dragended(d) {
+            if (!d3.event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        /**
+         * Filters and renders the graph based on a selected root node and direction.
+         * @param {string} rootNodeId The ID of the root node to filter by.
+         */
+        function filterAndRenderGraph(rootNodeId) {
+            if (!originalGraphData) return;
+
+            // Get the state of the "Show Disconnected" checkbox
+            const showDisconnected = document.getElementById('toggleDisconnected').checked;
+
+            // If no root is selected, render the full graph with all nodes and links
+            if (!rootNodeId) {
+                currentTransform = d3.zoomIdentity;
+                let filteredNodes = originalGraphData.nodes;
+                const filteredLinks = originalGraphData.links;
+                
+                // If disconnected nodes should be hidden, filter them out
+                if (!showDisconnected) {
+                    const connectedNodeIds = new Set();
+                    originalGraphData.links.forEach(l => {
+                        connectedNodeIds.add(l.source.id || l.source);
+                        connectedNodeIds.add(l.target.id || l.target);
+                    });
+                    filteredNodes = originalGraphData.nodes.filter(n => connectedNodeIds.has(n.id));
+                }
+
+                renderGraph(filteredNodes, filteredLinks);
+                return;
+            }
+
+            const filteredNodeIds = new Set();
+            filteredNodeIds.add(rootNodeId);
+            
+            if (isTopToBottom) {
+                // Top-to-Bottom: Find all nodes where the rootNodeId is the source
+                originalGraphData.links.forEach(link => {
+                    const source = typeof link.source === 'object' ? link.source.id : link.source;
+                    if (source === rootNodeId) {
+                        const target = typeof link.target === 'object' ? link.target.id : link.target;
+                        filteredNodeIds.add(target);
+                    }
+                });
+            } else {
+                // Default (Bottom-to-Top): Find all nodes where the rootNodeId is the target
+                originalGraphData.links.forEach(link => {
+                    const target = typeof link.target === 'object' ? link.target.id : link.target;
+                    if (target === rootNodeId) {
+                        const source = typeof link.source === 'object' ? link.source.id : link.source;
+                        filteredNodeIds.add(source);
+                    }
+                });
+            }
+
+            // Filter the nodes and links based on the new logic
+            const filteredNodes = originalGraphData.nodes.filter(node => filteredNodeIds.has(node.id));
+            const filteredLinks = originalGraphData.links.filter(link => {
+                const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                return filteredNodeIds.has(sourceId) && filteredNodeIds.has(targetId);
+            });
+
+            renderGraph(filteredNodes, filteredLinks);
+        }
+
+        /**
+         * Populates the dropdown menu with nodes that have links, and sorts them.
+         * @param {array} nodes An array of all nodes.
+         */
+        function populateDropdown(nodes) {
+            const select = document.getElementById('rootNodeSelect');
+            select.innerHTML = ''; // Clear existing options
+
+            // Filter and sort all nodes (not just linked ones)
+            const sortedNodes = [...nodes].sort((a, b) => {
+                const nameA = a.shortName || a.id;
+                const nameB = b.shortName || b.id;
+                return nameA.localeCompare(nameB);
+            });
+
+            // Add "Show All Nodes" option first
+            const allOption = document.createElement('option');
+            allOption.value = "";
+            allOption.textContent = "Show All Nodes";
+            select.appendChild(allOption);
+
+            // Add the sorted, linked nodes to the dropdown
+            sortedNodes.forEach(node => {
+                const option = document.createElement('option');
+                option.value = node.id;
+                option.textContent = node.shortName || node.id;
+                select.appendChild(option);
+            });
+        }
+		
+		function restartSimulation() {
+			if (!simulation) return;
+			const width = container.clientWidth;
+			const height = container.clientHeight;
+
+			// Reset positions and velocities for ALL nodes
+			simulation.nodes().forEach(node => {
+				node.x = Math.random() * width;
+				node.y = Math.random() * height;
+				node.vx = 0;
+				node.vy = 0;
+			});
+
+			// Reset simulation energy and restart
+			simulation.alpha(1).restart();
+		}
+        
+        /**
+         * Resets the graph to its initial state.
+         */
+        function resetView() {
+             currentTransform = d3.zoomIdentity;
+             const rootNodeId = document.getElementById('rootNodeSelect').value;
+             filterAndRenderGraph(rootNodeId !== "" ? parseInt(rootNodeId) : "");
+			 restartSimulation();
+        }
+
+        // Event listeners for file input and dropdown menu
+        document.getElementById('fileInput').addEventListener('change', function(evt) {
+            const file = evt.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const graph = JSON.parse(e.target.result);
+                    originalGraphData = graph;
+                    populateDropdown(graph.nodes);
+                    currentTransform = d3.zoomIdentity; // Reset zoom on new file upload
+                    filterAndRenderGraph(""); // Render the full graph initially
+                } catch (error) {
+                    console.error("Error parsing JSON file:", error);
+                    // Add a simple UI alert for the user
+                    const alertDiv = document.createElement('div');
+                    alertDiv.textContent = 'Error: Invalid JSON file. Please upload a valid file.';
+                    alertDiv.className = 'fixed top-4 right-4 p-4 rounded-md bg-red-500 text-white z-50';
+                    document.body.appendChild(alertDiv);
+                    setTimeout(() => alertDiv.remove(), 5000);
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        document.getElementById('rootNodeSelect').addEventListener('change', function(evt) {
+            const rootNodeId = evt.target.value;
+            // Handle the empty string case before parsing
+            if (rootNodeId === "") {
+                filterAndRenderGraph("");
+            } else {
+                filterAndRenderGraph(parseInt(rootNodeId));
+            }
+        });
+        
+        // Event listener for the new direction toggle checkbox
+        document.getElementById('toggleDirection').addEventListener('change', function(evt) {
+            isTopToBottom = evt.target.checked;
+            const rootNodeId = document.getElementById('rootNodeSelect').value;
+             if (rootNodeId === "") {
+                filterAndRenderGraph("");
+            } else {
+                filterAndRenderGraph(parseInt(rootNodeId));
+            }
+        });
+        
+        // Event listener for the new disconnected node toggle checkbox
+        document.getElementById('toggleDisconnected').addEventListener('change', function(evt) {
+            const rootNodeId = document.getElementById('rootNodeSelect').value;
+            filterAndRenderGraph(rootNodeId);
+        });
+
+        // Event listeners for the new toolbar controls
+        document.getElementById('nodeSize').addEventListener('input', updateGraphStyles);
+        document.getElementById('nodeColor').addEventListener('input', updateGraphStyles);
+        document.getElementById('textColor').addEventListener('input', updateGraphStyles);
+        document.getElementById('linkColor').addEventListener('input', updateGraphStyles);
+        document.getElementById('linkThickness').addEventListener('input', updateGraphStyles);
+        document.getElementById('toggleText').addEventListener('change', updateGraphStyles);
+        document.getElementById('resetViewBtn').addEventListener('click', resetView);
+    </script>
+</body>
+</html>
