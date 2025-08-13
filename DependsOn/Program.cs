@@ -66,6 +66,8 @@ class Program
 		else if (solFileInfo.Extension.ToLower() == ".csproj")
 			LoadProject(solFileInfo.FullName);
 
+		Console.WriteLine($"Done mapping. Found total {nodes.Count} nodes and {links.Count} links.");
+
 		var graph = new { nodes = nodes.Values, links };
 		var json = JsonSerializer.Serialize(graph, new JsonSerializerOptions { WriteIndented = true });
 		string jsonFilename = solFileInfo.Name + ".dependency-graph.json";
@@ -132,6 +134,8 @@ class Program
 	{
 		var compilation = proj.GetCompilationAsync().Result;
 		if (compilation == null) return;
+
+		Console.WriteLine($"Found {proj.Documents.Count()} documents to scan.");
 
 		// get the .cs files
 		foreach (var doc in proj.Documents)
