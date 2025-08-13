@@ -8,6 +8,12 @@ namespace DependsOn;
 
 class Program
 {
+	static int nextId = 0;
+	static Dictionary<int, Node> nodes = new Dictionary<int, Node>();
+	static List<Link> links = new List<Link>();
+	static Dictionary<string, int> nodeLookupByName = new Dictionary<string, int>(StringComparer.Ordinal);
+	static ScanTypeEnum scanTypeEnum = ScanTypeEnum.Full;
+
 	/*
 	 * 
 	 * valid arguments
@@ -42,97 +48,23 @@ class Program
 			return;
 		}
 
-		var slnPath = args[0];
-		var scanType = GetScanType((args[1]?.ToLower() ?? ""));
+		var filePath = args[0];
+		var scanTypeEnum = GetScanType((args[1]?.ToLower() ?? ""));
 
-		solFileInfo = new FileInfo(slnPath);
+		solFileInfo = new FileInfo(filePath);
 
 		if (!solFileInfo.Exists)
 		{
-			Console.WriteLine($"Solution file not found: {slnPath}");
+			Console.WriteLine($"Solution file not found: {filePath}");
 			return;
 		}
 
 		MSBuildLocator.RegisterDefaults();
-		Console.WriteLine($"Loading solution \"{solFileInfo.FullName}\" (this may take a while)...");
-		var workspace = MSBuildWorkspace.Create();
-		var solution = workspace.OpenSolutionAsync(slnPath).Result;
-		Console.WriteLine($"Solution loaded. Building map (this may take a while)...");
 
-		var nodes = new Dictionary<int, Node>();
-		var links = new List<Link>();
-		var nodeLookupByName = new Dictionary<string, int>(StringComparer.Ordinal);
-		int nextId = 0;
-		var projectSourceDirs = solution.Projects
-			.Select(p => Path.GetDirectoryName(p.FilePath) ?? "")
-			.Where(d => !string.IsNullOrEmpty(d))
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.ToList();
-
-		// get the projects within the solution
-		foreach (var proj in solution.Projects)
-		{
-			var compilation = proj.GetCompilationAsync().Result;
-			if (compilation == null) continue;
-
-			// get the .cs files
-			foreach (var doc in proj.Documents)
-			{
-				var tree = doc.GetSyntaxTreeAsync().Result;
-				if (tree == null) continue;
-
-				var model = compilation.GetSemanticModel(tree);
-				if (model == null) continue;
-
-				// so in one .cs file, sometimes, there are multiple classes, structs
-				// or interface like in services where we put Interface and and it's
-				// implementing class in one file
-				var root = tree.GetRoot();
-				if (root == null) continue;
-
-				var classes = GetAllNamedTypeSymbolClasses(root, model);
-				if (classes.Count() == 0) continue;
-
-				Console.WriteLine($"{Path.GetFileName(doc.FilePath)} Saving classes, structs, or interface to memory for linking");
-
-				//add all classes to our nodeLookup dictionary
-				AddClassesToNodes(
-					classes, 
-					proj.Name, 
-					doc?.FilePath ?? string.Empty, 
-					ref nodeLookupByName, 
-					ref nodes);
-
-				Console.WriteLine("DONE - saving all classes to memory for linking");
-
-				foreach (var sym in classes)
-				{
-					var fullName = sym.ToDisplayString();
-					Console.WriteLine($"Class {fullName}");
-					int nodeId = nodeLookupByName[fullName];
-
-					var classDecl = GetClassDeclarationSyntaxByClassName(root, sym.Name);
-					if (classDecl is null) continue;
-
-					switch (scanType)
-					{
-						case ScanTypeEnum.Full:
-							ScanReferenceLinks(projectSourceDirs, ref nodes, root, model, ref nodeLookupByName, ref nextId, fullName, ref links, nodeId);
-							ScanInheritanceLinks(model, classDecl, sym, ref nodeLookupByName, ref nextId, ref links, ref nodes, nodeId);
-
-							break;
-						case ScanTypeEnum.ReferenceOnly:
-							ScanReferenceLinks(projectSourceDirs, ref nodes, root, model, ref nodeLookupByName, ref nextId, fullName, ref links, nodeId);
-
-							break;
-						case ScanTypeEnum.InheritanceOnly:
-							ScanInheritanceLinks(model, classDecl, sym, ref nodeLookupByName, ref nextId, ref links, ref nodes, nodeId);
-
-							break;
-					}
-				}
-			}
-		}
+		if (solFileInfo.Extension.ToLower() == ".sln")
+			LoadSolution(solFileInfo.FullName);
+		else if (solFileInfo.Extension.ToLower() == ".csproj")
+			LoadProject(solFileInfo.FullName);
 
 		var graph = new { nodes = nodes.Values, links };
 		var json = JsonSerializer.Serialize(graph, new JsonSerializerOptions { WriteIndented = true });
@@ -140,6 +72,122 @@ class Program
 		string jsonFileFullPath = Path.Combine(Directory.GetCurrentDirectory(), jsonFilename);
 		File.WriteAllText(jsonFileFullPath, json);
 		Console.WriteLine($"{jsonFileFullPath} created.");
+	}
+
+	static void LoadSolution(string fullFilePath)
+	{
+		Console.WriteLine($"Loading solution \"{fullFilePath}\" (this may take a while)...");
+
+		var workspace = MSBuildWorkspace.Create();
+
+		var solution = workspace.OpenSolutionAsync(fullFilePath).Result;
+
+		if (solution is not null && solution.Projects is not null && solution.Projects.Any())
+		{
+			var projectSourceDirs = solution.Projects
+				.Select(p => Path.GetDirectoryName(p.FilePath) ?? "")
+				.Where(d => !string.IsNullOrEmpty(d))
+				.Distinct(StringComparer.OrdinalIgnoreCase)
+				.ToList();
+
+			Console.WriteLine($"Solution loaded. Building map (this may take a while)...");
+
+			// get the projects within the solution
+			foreach (var proj in solution.Projects)
+				ScanProject(proj, scanTypeEnum, projectSourceDirs);
+		}
+		else
+			Console.WriteLine($"No projects found in the solution");
+	}
+
+	static void LoadProject(string fullFilePath)
+	{
+		Console.WriteLine($"Loading project \"{fullFilePath}\" (this may take a while)...");
+
+		var workspace = MSBuildWorkspace.Create();
+
+		var project = workspace.OpenProjectAsync(fullFilePath).Result;
+
+		if (project is not null && project.Documents is not null && project.Documents.Any())
+		{
+			Console.WriteLine($"Project loaded. Building map (this may take a while)...");
+
+			var projectSourceDirs = project.Documents
+				.Select(p => Path.GetDirectoryName(p.FilePath) ?? "")
+				.Where(d => !string.IsNullOrEmpty(d))
+				.Distinct(StringComparer.OrdinalIgnoreCase)
+				.ToList();
+
+			ScanProject(project, scanTypeEnum, projectSourceDirs);
+		}
+		else
+			Console.WriteLine($"No classes found in the project");
+	}
+
+	static void ScanProject(
+		Project proj,
+		ScanTypeEnum scanType,
+		List<string> projectSourceDirs
+		)
+	{
+		var compilation = proj.GetCompilationAsync().Result;
+		if (compilation == null) return;
+
+		// get the .cs files
+		foreach (var doc in proj.Documents)
+		{
+			var tree = doc.GetSyntaxTreeAsync().Result;
+			if (tree == null) continue;
+
+			var model = compilation.GetSemanticModel(tree);
+			if (model == null) continue;
+
+			// so in one .cs file, sometimes, there are multiple classes, structs
+			// or interface like in services where we put Interface and and it's
+			// implementing class in one file
+			var root = tree.GetRoot();
+			if (root == null) continue;
+
+			var classes = GetAllNamedTypeSymbolClasses(root, model);
+			if (classes.Count() == 0) continue;
+
+			Console.WriteLine($"{Path.GetFileName(doc.FilePath)} Saving classes, structs, or interface to memory for linking");
+
+			//add all classes to our nodeLookup dictionary
+			AddClassesToNodes(
+				classes,
+				proj.Name,
+				doc?.FilePath ?? string.Empty);
+
+			Console.WriteLine("DONE - saving all classes to memory for linking");
+
+			foreach (var sym in classes)
+			{
+				var fullName = sym.ToDisplayString();
+				Console.WriteLine($"Class {fullName}");
+				int nodeId = nodeLookupByName[fullName];
+
+				var classDecl = GetClassDeclarationSyntaxByClassName(root, sym.Name);
+				if (classDecl is null) continue;
+
+				switch (scanType)
+				{
+					case ScanTypeEnum.Full:
+						//ScanReferenceLinks(projectSourceDirs, ref nodes, root, model, ref nodeLookupByName, ref nextId, fullName, ref links, nodeId);
+						ScanInheritanceLinks(model, classDecl, sym, nodeId);
+
+						break;
+					case ScanTypeEnum.ReferenceOnly:
+						//ScanReferenceLinks(projectSourceDirs, ref nodes, root, model, ref nodeLookupByName, ref nextId, fullName, ref links, nodeId);
+
+						break;
+					case ScanTypeEnum.InheritanceOnly:
+						ScanInheritanceLinks(model, classDecl, sym, nodeId);
+
+						break;
+				}
+			}
+		}
 	}
 
 	static List<INamedTypeSymbol> GetAllNamedTypeSymbolClasses(SyntaxNode root, SemanticModel model)
@@ -160,19 +208,17 @@ class Program
 						.Where(s => s.Identifier.Text == className)?
 						.FirstOrDefault();
 
-		return classDecl ?? null;
+#pragma warning disable CS8603 // Possible null reference return.
+		return classDecl; // Possible null reference return --- eh ano alternative?
+#pragma warning restore CS8603 // Possible null reference return.
 	}
 
 	static void AddClassesToNodes(
 		List<INamedTypeSymbol> classes,
 		string projectName,
-		string documentName,
-		ref Dictionary<string, int> nodeLookupByName,
-		ref Dictionary<int, Node> nodes
+		string documentName
 		)
 	{
-		int nextId = 0;
-
 		for (int i = 0; i < classes.Count(); i++)
 		{
 			int id = nextId++;
@@ -198,13 +244,9 @@ class Program
 
 	static void ScanReferenceLinks(
 		List<string> projectSourceDirs,
-		ref Dictionary<int, Node> nodes,
 		SyntaxNode root,
 		SemanticModel model,
-		ref Dictionary<string, int> nodeLookupByName,
-		ref int nextId,
 		string fullName,
-		ref List<Link> links,
 		int nodeId
 		)
 	{
@@ -252,10 +294,6 @@ class Program
 		SemanticModel model,
 		ClassDeclarationSyntax classDecl,
 		INamedTypeSymbol sym,
-		ref Dictionary<string, int> nodeLookupByName,
-		ref int nextId,
-		ref List<Link> links,
-		ref Dictionary<int, Node> nodes,
 		int nodeId
 		)
 	{
