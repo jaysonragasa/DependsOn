@@ -173,12 +173,12 @@ class Program
 				switch (scanType)
 				{
 					case ScanTypeEnum.Full:
-						//ScanReferenceLinks(projectSourceDirs, ref nodes, root, model, ref nodeLookupByName, ref nextId, fullName, ref links, nodeId);
+						ScanReferenceLinks(projectSourceDirs, root, model, fullName, nodeId);
 						ScanInheritanceLinks(model, classDecl, sym, nodeId);
 
 						break;
 					case ScanTypeEnum.ReferenceOnly:
-						//ScanReferenceLinks(projectSourceDirs, ref nodes, root, model, ref nodeLookupByName, ref nextId, fullName, ref links, nodeId);
+						ScanReferenceLinks(projectSourceDirs, root, model, fullName, nodeId);
 
 						break;
 					case ScanTypeEnum.InheritanceOnly:
@@ -268,24 +268,18 @@ class Program
 									.StartsWith(dir, StringComparison.OrdinalIgnoreCase))))
 			.Distinct(SymbolEqualityComparer.Default);
 
+		// now loop throuh all the classes referencing this current
+		// model/class
 		foreach (var refSym in referencedSymbols)
 		{
 			var refName = refSym.ToDisplayString();
-			if (!nodeLookupByName.TryGetValue(refName, out int refId))
-			{
-				refId = nextId++;
-				nodes[refId] = Node.Create(
-					refId,
-					refName,
-					string.IsNullOrWhiteSpace(refSym.Name) ? refSym.ToDisplayString() : refSym.Name,
-					refSym.ContainingAssembly?.Name ?? "",
-					string.Empty);
-				nodeLookupByName[refName] = refId;
-			}
+			var result = nodeLookupByName.TryGetValue(refName, out int refId);
 
-			if (!links.Any(l => l.source == nodeId && l.target == refId && l.linkType == "reference"))
+			if (refId == 0) return;
+
+			if (!links.Any(l => l.source == nodeId && l.target == refId && l.linkType == nameof(LinkTypeEnum.Reference)))
 			{
-				links.Add(new Link { source = nodeId, target = refId, linkType = "reference" });
+				links.Add(new Link { source = nodeId, target = refId, linkType = nameof(LinkTypeEnum.Reference) });
 			}
 		}
 	}
