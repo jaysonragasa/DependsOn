@@ -1,4 +1,8 @@
 # DependsOn
+Here's a sample preview where we are checking MAUI's Core project and then the entirety of the MAUI sln file. 
+![alt text](https://github.com/jaysonragasa/DependsOn/blob/main/preview.gif?raw=true)  
+
+
 ## A C# Class Dependency Visualizer
 
 A tool that scans your C# solution or project file and generates a dependency graph of classes, including base class hierarchies and class references.  
