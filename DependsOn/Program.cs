@@ -11,7 +11,7 @@ class Program
 	static int nextId = 0;
 	static Dictionary<int, Node> nodes = new Dictionary<int, Node>();
 	static List<Link> links = new List<Link>();
-	static Dictionary<string, int> nodeLookupByName = new Dictionary<string, int>(StringComparer.Ordinal);
+	static Dictionary<string, int> nodesLookupByName = new Dictionary<string, int>(StringComparer.Ordinal);
 	static ScanTypeEnum scanTypeEnum = ScanTypeEnum.Full;
 
 	/*
@@ -49,7 +49,7 @@ class Program
 		}
 
 		var filePath = args[0];
-		var scanTypeEnum = GetScanType((args[1]?.ToLower() ?? ""));
+		scanTypeEnum = GetScanType((args[1]?.ToLower() ?? ""));
 
 		solFileInfo = new FileInfo(filePath);
 
@@ -66,11 +66,11 @@ class Program
 		else if (solFileInfo.Extension.ToLower() == ".csproj")
 			LoadProject(solFileInfo.FullName);
 
-		Console.WriteLine($"Done mapping. Found total {nodes.Count} nodes and {links.Count} links.");
+		Console.WriteLine($"Done mapping. Found total of {nodes.Count} nodes and {links.Count} links.");
 
 		var graph = new { nodes = nodes.Values, links };
 		var json = JsonSerializer.Serialize(graph, new JsonSerializerOptions { WriteIndented = true });
-		string jsonFilename = solFileInfo.Name + ".dependency-graph.json";
+		string jsonFilename = solFileInfo.Name.Replace(" ", "_") + "-" + scanTypeEnum.ToString() + ".dependency-graph.json";
 		string jsonFileFullPath = Path.Combine(Directory.GetCurrentDirectory(), jsonFilename);
 		File.WriteAllText(jsonFileFullPath, json);
 		Console.WriteLine($"{jsonFileFullPath} created.");
@@ -153,7 +153,7 @@ class Program
 			if (root == null) continue;
 
 			var classes = GetAllNamedTypeSymbolClasses(root, model);
-			if (classes.Count() == 0) continue;
+			if (!classes.Any()) continue;
 
 			Console.WriteLine($"{Path.GetFileName(doc.FilePath)} Saving classes, structs, or interface to memory for linking");
 
@@ -169,16 +169,13 @@ class Program
 			{
 				var fullName = sym.ToDisplayString();
 				Console.WriteLine($"Class {fullName}");
-				int nodeId = nodeLookupByName[fullName];
-
-				var classDecl = GetClassDeclarationSyntaxByClassName(root, sym.Name);
-				if (classDecl is null) continue;
+				int nodeId = nodesLookupByName[fullName];
 
 				switch (scanType)
 				{
 					case ScanTypeEnum.Full:
 						ScanReferenceLinks(projectSourceDirs, root, model, fullName, nodeId);
-						ScanInheritanceLinks(model, classDecl, sym, nodeId);
+						ScanInheritanceLinks(model, sym, nodeId, root);
 
 						break;
 					case ScanTypeEnum.ReferenceOnly:
@@ -186,7 +183,7 @@ class Program
 
 						break;
 					case ScanTypeEnum.InheritanceOnly:
-						ScanInheritanceLinks(model, classDecl, sym, nodeId);
+						ScanInheritanceLinks(model, sym, nodeId, root);
 
 						break;
 				}
@@ -205,12 +202,13 @@ class Program
 		return classes;
 	}
 
-	static ClassDeclarationSyntax GetClassDeclarationSyntaxByClassName(SyntaxNode root, string className)
+	static SyntaxNode GetSyntaxNodeDeclarationSyntaxByClassName(SyntaxNode root, string className)
 	{
 		var classDecl = root?.DescendantNodes()?
-						.OfType<ClassDeclarationSyntax>()?
-						.Where(s => s.Identifier.Text == className)?
-						.FirstOrDefault();
+			.Where(n =>
+				(n is ClassDeclarationSyntax cds && cds.Identifier.Text == className) ||
+				(n is RecordDeclarationSyntax rds && rds.Identifier.Text == className))
+			.FirstOrDefault();
 
 #pragma warning disable CS8603 // Possible null reference return.
 		return classDecl; // Possible null reference return --- eh ano alternative?
@@ -230,9 +228,9 @@ class Program
 
 			var fullName = classes[i]?.ToDisplayString() ?? "";
 
-			if (!string.IsNullOrWhiteSpace(fullName) && !nodeLookupByName.ContainsKey(fullName))
+			if (!string.IsNullOrWhiteSpace(fullName) && !nodesLookupByName.ContainsKey(fullName))
 			{
-				nodeLookupByName[fullName] = id;
+				nodesLookupByName[fullName] = id;
 
 				var shortName = string.IsNullOrWhiteSpace(sym.Name) ? sym.ToDisplayString() : sym.Name;
 
@@ -277,7 +275,7 @@ class Program
 		foreach (var refSym in referencedSymbols)
 		{
 			var refName = refSym.ToDisplayString();
-			var result = nodeLookupByName.TryGetValue(refName, out int refId);
+			var result = nodesLookupByName.TryGetValue(refName, out int refId);
 
 			if (refId == 0) return;
 
@@ -290,12 +288,15 @@ class Program
 
 	static void ScanInheritanceLinks(
 		SemanticModel model,
-		ClassDeclarationSyntax classDecl,
 		INamedTypeSymbol sym,
-		int nodeId
+		int nodeId,
+		SyntaxNode root
 		)
 	{
-		var symbol = model.GetDeclaredSymbol(classDecl, default);
+		var syntaxNode = GetSyntaxNodeDeclarationSyntaxByClassName(root, sym.Name);
+		if (syntaxNode is null) return;
+
+		var symbol = model.GetDeclaredSymbol(syntaxNode, default);
 		if (symbol is null) return;
 
 		var baseType = ((INamedTypeSymbol)symbol).BaseType?.OriginalDefinition ?? null;
@@ -304,7 +305,7 @@ class Program
 
 		var baseName = baseType?.ToDisplayString() ?? null;
 		if (baseName is null) return;
-		var result = nodeLookupByName.TryGetValue(baseName, out int baseId);
+		var result = nodesLookupByName.TryGetValue(baseName, out int baseId);
 
 		if (baseId == 0) return;
 

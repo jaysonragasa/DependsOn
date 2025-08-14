@@ -12,7 +12,7 @@
             margin: 0;
             overflow: hidden;
             font-family: 'Inter', sans-serif;
-            background-color: black;  /*#0f172a;*/ /* slate-900 */
+            background-color: #0f172a; /* slate-900 */
         }
         .node-circle {
             stroke: #fff;
@@ -25,97 +25,172 @@
             stroke-width: 2.5px;
         }
         .link {
-            stroke: #9ca3af; /* gray-400 */
+            stroke: #6b7280; /* gray-500 */
             stroke-opacity: 0.6;
             transition: all 0.2s ease-in-out;
         }
         .node-text {
-            fill: #fde047; /* changed to yellow-300 for better visibility */
+            fill: #e2e8f0; /* slate-200 for better contrast */
             pointer-events: none;
             user-select: none;
             text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
         }
-        .toolbar-group {
-            @apply flex items-center space-x-1 sm:space-x-2;
+        /* Custom styling for the range input for a more professional look */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+            width: 100%;
         }
-        .toolbar-label {
-            @apply text-xs font-semibold whitespace-nowrap;
+        input[type="range"]::-webkit-slider-runnable-track {
+            background: #4b5563; /* gray-600 */
+            height: 4px;
+            border-radius: 2px;
         }
-        .toolbar-input {
-            @apply h-6 bg-gray-700 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm;
+        input[type="range"]::-moz-range-track {
+            background: #4b5563; /* gray-600 */
+            height: 4px;
+            border-radius: 2px;
         }
-        .toolbar-input[type="range"] {
-            @apply w-20 sm:w-24;
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            margin-top: -6px;
+            height: 16px;
+            width: 16px;
+            background-color: #6366f1; /* indigo-500 */
+            border-radius: 50%;
+            border: 2px solid #fff;
+            transition: background-color 0.2s ease-in-out;
         }
-        .toolbar-input[type="color"] {
-            @apply w-8 h-6 p-0;
+        input[type="range"]::-webkit-slider-thumb:hover {
+            background-color: #4f46e5; /* indigo-600 */
         }
-        #toggleText {
-            @apply w-4 h-4;
+        input[type="range"]::-moz-range-thumb {
+            height: 16px;
+            width: 16px;
+            background-color: #6366f1; /* indigo-500 */
+            border-radius: 50%;
+            border: 2px solid #fff;
+            transition: background-color 0.2s ease-in-out;
+        }
+        input[type="range"]::-moz-range-thumb:hover {
+            background-color: #4f46e5; /* indigo-600 */
+        }
+        /* Custom styling for checkbox */
+        #toggleText, #toggleDirection, #toggleDisconnected {
+            -webkit-appearance: none;
+            appearance: none;
+            display: inline-block;
+            width: 1.25rem;
+            height: 1.25rem;
+            border: 2px solid #6b7280; /* gray-500 */
+            background-color: #1f2937; /* gray-800 */
+            border-radius: 0.25rem;
+            cursor: pointer;
+            position: relative;
+            vertical-align: middle;
+            transition: all 0.2s ease-in-out;
+        }
+        #toggleText:checked, #toggleDirection:checked, #toggleDisconnected:checked {
+            background-color: #6366f1; /* indigo-500 */
+            border-color: #6366f1; /* indigo-500 */
+        }
+        #toggleText:checked::after, #toggleDirection:checked::after, #toggleDisconnected:checked::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 0.75rem;
+            line-height: 1;
+        }
+        /* Custom styling for select input */
+        select {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3e%3cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd' /%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 0.5rem center;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
         }
     </style>
 </head>
 <body class="flex flex-col h-screen">
-    <div class="p-2 sm:p-4 bg-gray-800 text-white shadow-lg flex flex-wrap md:flex-row items-center space-y-2 md:space-y-0 md:space-x-4 z-20 overflow-x-auto">
+    <div class="p-4 bg-gray-900 text-gray-200 shadow-xl flex flex-wrap gap-4 items-center z-20 overflow-x-auto">
         <!-- File Upload & Root Node Select -->
-        <div class="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
-            <label for="fileInput" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded-full transition-colors duration-200 cursor-pointer text-xs sm:text-sm">
+        <div class="flex items-center gap-4 flex-shrink-0">
+            <label for="fileInput" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-5 rounded-full transition-colors duration-200 cursor-pointer text-sm shadow-md">
                 Upload JSON
             </label>
             <input type="file" id="fileInput" accept=".json" class="hidden">
-            <label for="rootNodeSelect" class="text-xs sm:text-sm font-semibold whitespace-nowrap">Root Node:</label>
-            <select id="rootNodeSelect" class="w-28 p-1 sm:p-2 bg-gray-700 text-white rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs sm:text-sm">
-                <option value="">Show All</option>
-            </select>
+            <div class="flex items-center gap-2">
+                <label for="rootNodeSelect" class="text-sm font-semibold whitespace-nowrap">Root Node:</label>
+                <select id="rootNodeSelect" class="min-w-[120px] p-2 bg-gray-700 text-gray-100 rounded-md border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                    <option value="">Show All</option>
+                </select>
+            </div>
         </div>
 
         <!-- Toolbars for Node and Link styling -->
-        <div class="flex flex-wrap items-center space-x-2 sm:space-x-4 flex-grow-0 md:flex-grow justify-start">
-            <!-- Node Size -->
-            <div class="toolbar-group">
-                <label for="nodeSize" class="toolbar-label">Node Size:</label>
-                <input type="range" id="nodeSize" class="toolbar-input" min="5" max="30" value="10">
+        <div class="flex flex-wrap items-center gap-4 flex-grow justify-start">
+            <!-- Node Controls -->
+            <div class="flex items-center gap-2 border-l border-gray-700 pl-4">
+                <!-- Node Size -->
+                <label for="nodeSize" class="text-sm font-semibold whitespace-nowrap">Node Size:</label>
+                <input type="range" id="nodeSize" class="w-24" min="5" max="30" value="10">
+                <!-- Node Color -->
+                <label for="nodeColor" class="text-sm font-semibold whitespace-nowrap">Color:</label>
+                <input type="color" id="nodeColor" class="w-8 h-8 p-0 border-2 border-gray-600 rounded-md overflow-hidden cursor-pointer" value="#69b3a2">
             </div>
-            <!-- Node Color -->
-            <div class="toolbar-group">
-                <label for="nodeColor" class="toolbar-label">Node Color:</label>
-                <input type="color" id="nodeColor" class="toolbar-input !p-0" value="#69b3a2">
+
+            <!-- Link Controls -->
+            <div class="flex items-center gap-2 border-l border-gray-700 pl-4">
+                <!-- Link Thickness -->
+                <label for="linkThickness" class="text-sm font-semibold whitespace-nowrap">Link Thickness:</label>
+                <input type="range" id="linkThickness" class="w-24" min="1" max="10" value="4">
+                <!-- Link Color -->
+                <label for="linkColor" class="text-sm font-semibold whitespace-nowrap">Color:</label>
+                <input type="color" id="linkColor" class="w-8 h-8 p-0 border-2 border-gray-600 rounded-md overflow-hidden cursor-pointer" value="#6b7280">
             </div>
-            <!-- Link Thickness -->
-            <div class="toolbar-group">
-                <label for="linkThickness" class="toolbar-label">Link Thickness:</label>
-                <input type="range" id="linkThickness" class="toolbar-input" min="1" max="10" value="4">
+
+            <!-- Text & View Controls -->
+            <div class="flex items-center gap-4 border-l border-gray-700 pl-4">
+                <!-- Text Color -->
+                <div class="flex items-center gap-2">
+                    <label for="textColor" class="text-sm font-semibold whitespace-nowrap">Text Color:</label>
+                    <input type="color" id="textColor" class="w-8 h-8 p-0 border-2 border-gray-600 rounded-md overflow-hidden cursor-pointer" value="#fde047">
+                </div>
+                <!-- Hide/Show Text -->
+                <div class="flex items-center gap-2">
+                    <label for="toggleText" class="text-sm font-semibold whitespace-nowrap">Show Text:</label>
+                    <input type="checkbox" id="toggleText" checked>
+                </div>
             </div>
-            <!-- Link Color -->
-            <div class="toolbar-group">
-                <label for="linkColor" class="toolbar-label">Link Color:</label>
-                <input type="color" id="linkColor" class="toolbar-input !p-0" value="#9ca3af">
+
+            <!-- Layout & Display Controls -->
+            <div class="flex items-center gap-4 border-l border-gray-700 pl-4">
+                <!-- Top to Bottom -->
+                <div class="flex items-center gap-2">
+                    <label for="toggleDirection" class="text-sm font-semibold whitespace-nowrap">Top-to-Bottom:</label>
+                    <input type="checkbox" id="toggleDirection">
+                </div>
+                <!-- Show Disconnected Nodes -->
+                <div class="flex items-center gap-2">
+                    <label for="toggleDisconnected" class="text-sm font-semibold whitespace-nowrap">Show Disconnected:</label>
+                    <input type="checkbox" id="toggleDisconnected">
+                </div>
             </div>
-            <!-- Text Color -->
-            <div class="toolbar-group">
-                <label for="textColor" class="toolbar-label">Text Color:</label>
-                <input type="color" id="textColor" class="toolbar-input !p-0" value="#fde047">
-            </div>
-            <!-- Hide/Show Text -->
-            <div class="toolbar-group">
-                <label for="toggleText" class="toolbar-label">Show Text:</label>
-                <input type="checkbox" id="toggleText" class="w-4 h-4 text-indigo-600 rounded" checked>
-            </div>
-             <!-- Top to Bottom -->
-             <div class="toolbar-group">
-                <label for="toggleDirection" class="toolbar-label">Top-to-Bottom:</label>
-                <input type="checkbox" id="toggleDirection" class="w-4 h-4 text-indigo-600 rounded">
-            </div>
-             <!-- Show Disconnected Nodes -->
-             <div class="toolbar-group">
-                <label for="toggleDisconnected" class="toolbar-label">Show Disconnected:</label>
-                <input type="checkbox" id="toggleDisconnected" class="w-4 h-4 text-indigo-600 rounded">
-            </div>
+            
             <!-- Reset View -->
-            <div class="flex items-center">
-                 <button id="resetViewBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-full transition-colors duration-200 text-xs sm:text-sm">
-                     Reset View
-                 </button>
+            <div class="flex items-center ml-auto">
+                <button id="resetViewBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-5 rounded-full transition-colors duration-200 text-sm shadow-md">
+                    Reset View
+                </button>
             </div>
         </div>
     </div>
@@ -285,6 +360,47 @@
             d.fx = null;
             d.fy = null;
         }
+		
+		/**
+         * Recursively finds all connected nodes starting from a given root.
+         * @param {string|number} startNodeId The ID of the node to start the traversal from.
+         * @param {string} direction 'up' for dependencies (bottom-to-top) or 'down' for dependents (top-to-bottom).
+         * @returns {Set<string|number>} A Set of all reachable node IDs.
+         */
+        function findConnectedNodes(startNodeId, direction) {
+            const connectedIds = new Set();
+            const queue = [startNodeId];
+            connectedIds.add(startNodeId);
+
+            const getNeighbors = (nodeId) => {
+                const neighbors = [];
+                originalGraphData.links.forEach(link => {
+                    const sourceId = (typeof link.source === 'object') ? link.source.id : link.source;
+                    const targetId = (typeof link.target === 'object') ? link.target.id : link.target;
+                    
+                    if (direction === 'up' && targetId === nodeId) {
+                        neighbors.push(sourceId);
+                    } else if (direction === 'down' && sourceId === nodeId) {
+                        neighbors.push(targetId);
+                    }
+                });
+                return neighbors;
+            };
+
+            let head = 0;
+            while(head < queue.length) {
+                const currentNodeId = queue[head++];
+                const neighbors = getNeighbors(currentNodeId);
+                
+                neighbors.forEach(neighborId => {
+                    if (!connectedIds.has(neighborId)) {
+                        connectedIds.add(neighborId);
+                        queue.push(neighborId);
+                    }
+                });
+            }
+            return connectedIds;
+        }
 
         /**
          * Filters and renders the graph based on a selected root node and direction.
@@ -315,29 +431,9 @@
                 renderGraph(filteredNodes, filteredLinks);
                 return;
             }
-
-            const filteredNodeIds = new Set();
-            filteredNodeIds.add(rootNodeId);
-            
-            if (isTopToBottom) {
-                // Top-to-Bottom: Find all nodes where the rootNodeId is the source
-                originalGraphData.links.forEach(link => {
-                    const source = typeof link.source === 'object' ? link.source.id : link.source;
-                    if (source === rootNodeId) {
-                        const target = typeof link.target === 'object' ? link.target.id : link.target;
-                        filteredNodeIds.add(target);
-                    }
-                });
-            } else {
-                // Default (Bottom-to-Top): Find all nodes where the rootNodeId is the target
-                originalGraphData.links.forEach(link => {
-                    const target = typeof link.target === 'object' ? link.target.id : link.target;
-                    if (target === rootNodeId) {
-                        const source = typeof link.source === 'object' ? link.source.id : link.source;
-                        filteredNodeIds.add(source);
-                    }
-                });
-            }
+			
+			const direction = isTopToBottom ? 'down' : 'up';
+            const filteredNodeIds = findConnectedNodes(rootNodeId, direction);
 
             // Filter the nodes and links based on the new logic
             const filteredNodes = originalGraphData.nodes.filter(node => filteredNodeIds.has(node.id));
