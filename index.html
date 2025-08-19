@@ -34,6 +34,7 @@
             pointer-events: none;
             user-select: none;
             text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+            transition: opacity 0.2s ease-in-out;
         }
         /* Custom styling for the range input for a more professional look */
         input[type="range"] {
@@ -79,7 +80,7 @@
             background-color: #4f46e5; /* indigo-600 */
         }
         /* Custom styling for checkbox */
-        #toggleText, #toggleDirection, #toggleDisconnected {
+        #toggleText, #toggleDirection, #toggleDisconnected, #toggleGlobe {
             -webkit-appearance: none;
             appearance: none;
             display: inline-block;
@@ -93,11 +94,11 @@
             vertical-align: middle;
             transition: all 0.2s ease-in-out;
         }
-        #toggleText:checked, #toggleDirection:checked, #toggleDisconnected:checked {
+        #toggleText:checked, #toggleDirection:checked, #toggleDisconnected:checked, #toggleGlobe:checked {
             background-color: #6366f1; /* indigo-500 */
             border-color: #6366f1; /* indigo-500 */
         }
-        #toggleText:checked::after, #toggleDirection:checked::after, #toggleDisconnected:checked::after {
+        #toggleText:checked::after, #toggleDirection:checked::after, #toggleDisconnected:checked::after, #toggleGlobe:checked::after {
             content: '✓';
             position: absolute;
             top: 50%;
@@ -184,6 +185,11 @@
                     <label for="toggleDisconnected" class="text-sm font-semibold whitespace-nowrap">Show Disconnected:</label>
                     <input type="checkbox" id="toggleDisconnected">
                 </div>
+                <!-- Globe View -->
+                <div class="flex items-center gap-2">
+                    <label for="toggleGlobe" class="text-sm font-semibold whitespace-nowrap">Globe View:</label>
+                    <input type="checkbox" id="toggleGlobe">
+                </div>
             </div>
             
             <!-- Reset View -->
@@ -201,369 +207,485 @@
     </div>
 
     <script>
-        // Set up D3 constants and variables
-        const container = document.getElementById('graph-container');
-        const svg = d3.select("#dependency-graph-svg");
-        let simulation;
-        let originalGraphData;
-        let g = svg.append("g"); // Initializing the main group 'g'
-        let currentTransform = d3.zoomIdentity; // Store the current zoom/pan state
-        let isTopToBottom = false;
-
-        // Create a zoom behavior and apply it to the SVG
-        const zoom = d3.zoom()
-            .scaleExtent([0.05, 4])
-            .on("zoom", zoomed);
-
-        // Apply zoom behavior to the SVG
-        svg.call(zoom);
-
-        // Zoom function - stores the current transform
-        function zoomed() {
-            g.attr("transform", d3.event.transform);
-            currentTransform = d3.event.transform; // Save the current state
-        }
-        
         /**
-         * Handles the click event on a node.
-         * It filters the graph to show only the selected node's dependencies.
-         * @param {object} d The data of the clicked node.
+         * The main D3.js script for visualizing a dependency graph.
+         * This script is encapsulated in an Immediately Invoked Function Expression (IIFE)
+         * to prevent global variable pollution.
          */
-        function click(d) {
-            // Check if the clicked node has a FilePath property
-            if (d.filePath) {
-                // Update the dropdown to reflect the clicked node
-                document.getElementById('rootNodeSelect').value = d.id;
-                // Filter and render the graph based on the clicked node's ID
-                filterAndRenderGraph(parseInt(d.id));
-            } else {
-                 console.log("Clicked node has no FilePath property.");
-            }
-        }
-
-
-        /**
-         * Applies the current styles from the toolbar to the graph.
-         */
-        function updateGraphStyles() {
-            if (!originalGraphData) return;
-
-            const nodeSize = document.getElementById('nodeSize').value;
-            const nodeColor = document.getElementById('nodeColor').value;
-            const textColor = document.getElementById('textColor').value;
-            const linkColor = document.getElementById('linkColor').value;
-            const linkThickness = document.getElementById('linkThickness').value;
-            const showText = document.getElementById('toggleText').checked;
-
-            // Apply styles to nodes
-            g.selectAll(".node-circle")
-                .attr("r", nodeSize)
-                .style("fill", nodeColor);
+        (function() {
+            // ====================================================================================
+            // I. SETUP & STATE MANAGEMENT
+            // ====================================================================================
             
-            // Apply styles to text
-            g.selectAll(".node-text")
-                .style("fill", textColor)
-                .style("opacity", showText ? 1 : 0);
-
-            // Apply styles to links
-            g.selectAll(".link")
-                .attr("stroke-width", linkThickness)
-                .style("stroke", linkColor);
-        }
-
-        /**
-         * Renders the graph based on the provided nodes and links.
-         * @param {array} nodes The array of nodes to render.
-         * @param {array} links The array of links to render.
-         */
-        function renderGraph(nodes, links) {
-            const width = container.clientWidth;
-            const height = container.clientHeight;
-
-            // Clear the old elements without removing the group
-            g.selectAll("*").remove();
-
-            // Re-apply the stored zoom and pan transform
-            svg.call(zoom.transform, currentTransform);
-            
-            // Set SVG container dimensions
-            svg.attr("width", width).attr("height", height);
-
-            // Create the D3 force simulation
-            simulation = d3.forceSimulation(nodes)
-                .force("link", d3.forceLink(links).id(d => d.id).distance(d => d.weight ? 10 / d.weight : 350))
-                .force("charge", d3.forceManyBody().strength(-400))
-                .force("center", d3.forceCenter(width / 2, height / 2))
-                .on("tick", ticked);
-
-            // Create the links (lines)
-            const link = g.append("g")
-                .attr("class", "links")
-                .selectAll("line")
-                .data(links)
-                .enter().append("line")
-                .attr("class", "link");
-
-            // Create the nodes (circles with text)
-            const node = g.append("g")
-                .attr("class", "nodes")
-                .selectAll("g")
-                .data(nodes)
-                .enter().append("g")
-                .call(d3.drag()
-                    .on("start", dragstarted)
-                    .on("drag", dragged)
-                    .on("end", dragended))
-                .on("click", click); // Attach the click event listener
-
-            node.append("circle")
-                .attr("class", "node-circle");
-            node.append("title")
-                .text(d => d.shortName || d.id);
-            node.append("text")
-                .attr("class", "node-text")
-                .attr("x", 15)
-                .attr("y", 3)
-                .text(d => d.shortName || d.id)
-                .style("font-size", "12px");
-
-            // After drawing, apply the current toolbar styles
-            updateGraphStyles();
-
-            // Update positions on each tick of the simulation
-            function ticked() {
-                link
-                    .attr("x1", d => d.source.x)
-                    .attr("y1", d => d.source.y)
-                    .attr("x2", d => d.target.x)
-                    .attr("y2", d => d.target.y);
-
-                node
-                    .attr("transform", d => `translate(${d.x},${d.y})`);
-            }
-        }
-
-        // Drag functions
-        function dragstarted(d) {
-            if (!d3.event.active) simulation.alphaTarget(0.3).restart();
-            d.fx = d.x;
-            d.fy = d.y;
-        }
-
-        function dragged(d) {
-            d.fx = d3.event.x;
-            d.fy = d3.event.y;
-        }
-
-        function dragended(d) {
-            if (!d3.event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
-        }
-		
-		/**
-         * Recursively finds all connected nodes starting from a given root.
-         * @param {string|number} startNodeId The ID of the node to start the traversal from.
-         * @param {string} direction 'up' for dependencies (bottom-to-top) or 'down' for dependents (top-to-bottom).
-         * @returns {Set<string|number>} A Set of all reachable node IDs.
-         */
-        function findConnectedNodes(startNodeId, direction) {
-            const connectedIds = new Set();
-            const queue = [startNodeId];
-            connectedIds.add(startNodeId);
-
-            const getNeighbors = (nodeId) => {
-                const neighbors = [];
-                originalGraphData.links.forEach(link => {
-                    const sourceId = (typeof link.source === 'object') ? link.source.id : link.source;
-                    const targetId = (typeof link.target === 'object') ? link.target.id : link.target;
-                    
-                    if (direction === 'up' && targetId === nodeId) {
-                        neighbors.push(sourceId);
-                    } else if (direction === 'down' && sourceId === nodeId) {
-                        neighbors.push(targetId);
-                    }
-                });
-                return neighbors;
+            // Central object to manage application state and D3 selections
+            const appState = {
+                originalGraphData: null,
+                currentTransform: d3.zoomIdentity,
+                isTopToBottom: false,
+                container: document.getElementById('graph-container'),
+                svg: d3.select("#dependency-graph-svg"),
+                g: null, // The main group element for the graph
+                simulation: null,
+                globeInterval: null
             };
 
-            let head = 0;
-            while(head < queue.length) {
-                const currentNodeId = queue[head++];
-                const neighbors = getNeighbors(currentNodeId);
-                
-                neighbors.forEach(neighborId => {
-                    if (!connectedIds.has(neighborId)) {
-                        connectedIds.add(neighborId);
-                        queue.push(neighborId);
-                    }
+            // D3 behaviors
+            const zoom = d3.zoom()
+                .scaleExtent([0.05, 4])
+                .on("zoom", () => {
+                    appState.g.attr("transform", d3.event.transform);
+                    appState.currentTransform = d3.event.transform;
                 });
+
+            /**
+             * Initializes the graph by creating the main group element and applying zoom.
+             */
+            function initializeGraph() {
+                // Initialize the main group 'g' for the graph
+                appState.g = appState.svg.append("g");
+                // Apply the zoom behavior to the SVG
+                appState.svg.call(zoom);
             }
-            return connectedIds;
-        }
 
-        /**
-         * Filters and renders the graph based on a selected root node and direction.
-         * @param {string} rootNodeId The ID of the root node to filter by.
-         */
-        function filterAndRenderGraph(rootNodeId) {
-            if (!originalGraphData) return;
+            // ====================================================================================
+            // II. CORE RENDERING LOGIC
+            // ====================================================================================
 
-            // Get the state of the "Show Disconnected" checkbox
-            const showDisconnected = document.getElementById('toggleDisconnected').checked;
+            /**
+             * Renders the graph based on the provided nodes and links.
+             * @param {Array<object>} nodes The array of nodes to render.
+             * @param {Array<object>} links The array of links to render.
+             */
+            function renderGraph(nodes, links) {
+                const width = appState.container.clientWidth;
+                const height = appState.container.clientHeight;
 
-            // If no root is selected, render the full graph with all nodes and links
-            if (!rootNodeId) {
-                currentTransform = d3.zoomIdentity;
-                let filteredNodes = originalGraphData.nodes;
-                const filteredLinks = originalGraphData.links;
+                // Set SVG container dimensions and clear previous elements
+                appState.svg.attr("width", width).attr("height", height);
+                appState.g.selectAll("*").remove();
+
+                // Re-apply the stored zoom and pan transform
+                appState.svg.call(zoom.transform, appState.currentTransform);
                 
-                // If disconnected nodes should be hidden, filter them out
-                if (!showDisconnected) {
-                    const connectedNodeIds = new Set();
-                    originalGraphData.links.forEach(l => {
-                        connectedNodeIds.add(l.source.id || l.source);
-                        connectedNodeIds.add(l.target.id || l.target);
+                // Create the D3 force simulation
+                appState.simulation = d3.forceSimulation(nodes)
+                    .force("link", d3.forceLink(links).id(d => d.id).distance(d => d.weight ? 10 / d.weight : 350))
+                    .force("charge", d3.forceManyBody().strength(-400))
+                    .force("center", d3.forceCenter(width / 2, height / 2))
+                    .on("tick", ticked);
+
+                // Create and update the links
+                const link = appState.g.append("g")
+                    .attr("class", "links")
+                    .selectAll("line")
+                    .data(links)
+                    .enter().append("line")
+                    .attr("class", "link");
+
+                // Create and update the nodes
+                const node = appState.g.append("g")
+                    .attr("class", "nodes")
+                    .selectAll("g")
+                    .data(nodes)
+                    .enter().append("g")
+                    .call(d3.drag()
+                        .on("start", dragstarted)
+                        .on("drag", dragged)
+                        .on("end", dragended))
+                    .on("click", click);
+
+                node.append("circle")
+                    .attr("class", "node-circle");
+
+                node.append("title")
+                    .text(d => d.shortName || d.id);
+
+                node.append("text")
+                    .attr("class", "node-text")
+                    .attr("x", 15)
+                    .attr("y", 3)
+                    .text(d => d.shortName || d.id)
+                    .style("font-size", "12px");
+
+                // Apply styles from the toolbar to the new elements
+                updateGraphStyles();
+
+                /**
+                 * Updates the positions of links and nodes on each simulation tick.
+                 */
+                function ticked() {
+                    link
+                        .attr("x1", d => d.source.x)
+                        .attr("y1", d => d.source.y)
+                        .attr("x2", d => d.target.x)
+                        .attr("y2", d => d.target.y);
+
+                    node
+                        .attr("transform", d => `translate(${d.x},${d.y})`);
+                }
+            }
+
+            /**
+             * Applies the current styles from the toolbar to the graph elements.
+             */
+            function updateGraphStyles() {
+                if (!appState.originalGraphData) return;
+
+                const nodeSize = document.getElementById('nodeSize').value;
+                const nodeColor = document.getElementById('nodeColor').value;
+                const textColor = document.getElementById('textColor').value;
+                const linkColor = document.getElementById('linkColor').value;
+                const linkThickness = document.getElementById('linkThickness').value;
+                const showText = document.getElementById('toggleText').checked;
+
+                // Apply styles to nodes
+                appState.g.selectAll(".node-circle")
+                    .attr("r", nodeSize)
+                    .style("fill", nodeColor);
+                
+                // Apply styles to text
+                appState.g.selectAll(".node-text")
+                    .style("fill", textColor)
+                    .style("opacity", showText ? 1 : 0);
+
+                // Apply styles to links
+                appState.g.selectAll(".link")
+                    .attr("stroke-width", linkThickness)
+                    .style("stroke", linkColor);
+            }
+
+            // ====================================================================================
+            // III. INTERACTION & FILTERING LOGIC
+            // ====================================================================================
+
+            /**
+             * Handles the click event on a node.
+             * @param {object} d The data of the clicked node.
+             */
+            function click(d) {
+                if (d.filePath) {
+                    document.getElementById('rootNodeSelect').value = d.id;
+                    filterAndRenderGraph(parseInt(d.id));
+                } else {
+                    console.log("Clicked node has no FilePath property.");
+                }
+            }
+            
+            /**
+             * Recursively finds all connected nodes starting from a given root.
+             * @param {number} startNodeId The ID of the node to start the traversal from.
+             * @param {string} direction 'up' for dependencies or 'down' for dependents.
+             * @returns {Set<number>} A Set of all reachable node IDs.
+             */
+            function findConnectedNodes(startNodeId, direction) {
+                const connectedIds = new Set();
+                const queue = [startNodeId];
+                connectedIds.add(startNodeId);
+
+                // Helper function to get immediate neighbors based on direction
+                const getNeighbors = (nodeId) => {
+                    const neighbors = [];
+                    appState.originalGraphData.links.forEach(link => {
+                        const sourceId = (typeof link.source === 'object') ? link.source.id : link.source;
+                        const targetId = (typeof link.target === 'object') ? link.target.id : link.target;
+                        
+                        if (direction === 'up' && targetId === nodeId) {
+                            neighbors.push(sourceId);
+                        } else if (direction === 'down' && sourceId === nodeId) {
+                            neighbors.push(targetId);
+                        }
                     });
-                    filteredNodes = originalGraphData.nodes.filter(n => connectedNodeIds.has(n.id));
-                }
+                    return neighbors;
+                };
 
+                let head = 0;
+                while(head < queue.length) {
+                    const currentNodeId = queue[head++];
+                    const neighbors = getNeighbors(currentNodeId);
+                    
+                    neighbors.forEach(neighborId => {
+                        if (!connectedIds.has(neighborId)) {
+                            connectedIds.add(neighborId);
+                            queue.push(neighborId);
+                        }
+                    });
+                }
+                return connectedIds;
+            }
+
+            /**
+             * Filters and renders the graph based on a selected root node and direction.
+             * @param {string|number} rootNodeId The ID of the root node to filter by.
+             */
+            function filterAndRenderGraph(rootNodeId) {
+                if (!appState.originalGraphData) return;
+
+                const showDisconnected = document.getElementById('toggleDisconnected').checked;
+
+                if (!rootNodeId) {
+                    appState.currentTransform = d3.zoomIdentity;
+                    let filteredNodes = appState.originalGraphData.nodes;
+                    const filteredLinks = appState.originalGraphData.links;
+                    
+                    if (!showDisconnected) {
+                        const connectedNodeIds = new Set();
+                        appState.originalGraphData.links.forEach(l => {
+                            connectedNodeIds.add(l.source.id || l.source);
+                            connectedNodeIds.add(l.target.id || l.target);
+                        });
+                        filteredNodes = appState.originalGraphData.nodes.filter(n => connectedNodeIds.has(n.id));
+                    }
+                    renderGraph(filteredNodes, filteredLinks);
+                    return;
+                }
+                
+                const direction = appState.isTopToBottom ? 'down' : 'up';
+                const filteredNodeIds = findConnectedNodes(parseInt(rootNodeId), direction);
+
+                const filteredNodes = appState.originalGraphData.nodes.filter(node => filteredNodeIds.has(node.id));
+                const filteredLinks = appState.originalGraphData.links.filter(link => {
+                    const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                    const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                    return filteredNodeIds.has(sourceId) && filteredNodeIds.has(targetId);
+                });
+                
                 renderGraph(filteredNodes, filteredLinks);
-                return;
             }
-			
-			const direction = isTopToBottom ? 'down' : 'up';
-            const filteredNodeIds = findConnectedNodes(rootNodeId, direction);
 
-            // Filter the nodes and links based on the new logic
-            const filteredNodes = originalGraphData.nodes.filter(node => filteredNodeIds.has(node.id));
-            const filteredLinks = originalGraphData.links.filter(link => {
-                const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-                const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-                return filteredNodeIds.has(sourceId) && filteredNodeIds.has(targetId);
-            });
+            // ====================================================================================
+            // IV. UTILITY & DRAG FUNCTIONS
+            // ====================================================================================
+            
+            /**
+             * Resets the graph view to its initial zoom and pan state.
+             */
+            function resetView() {
+                appState.currentTransform = d3.zoomIdentity;
+                const rootNodeId = document.getElementById('rootNodeSelect').value;
+                filterAndRenderGraph(rootNodeId !== "" ? parseInt(rootNodeId) : "");
+                restartSimulation();
+            }
 
-            renderGraph(filteredNodes, filteredLinks);
-        }
+            /**
+             * Restarts the simulation with new random positions.
+             */
+            function restartSimulation() {
+                if (!appState.simulation) return;
+                const width = appState.container.clientWidth;
+                const height = appState.container.clientHeight;
 
-        /**
-         * Populates the dropdown menu with nodes that have links, and sorts them.
-         * @param {array} nodes An array of all nodes.
-         */
-        function populateDropdown(nodes) {
-            const select = document.getElementById('rootNodeSelect');
-            select.innerHTML = ''; // Clear existing options
+                appState.simulation.nodes().forEach(node => {
+                    node.x = Math.random() * width;
+                    node.y = Math.random() * height;
+                    node.vx = 0;
+                    node.vy = 0;
+                });
+                appState.simulation.alpha(1).restart();
+            }
 
-            // Filter and sort all nodes (not just linked ones)
-            const sortedNodes = [...nodes].sort((a, b) => {
-                const nameA = a.shortName || a.id;
-                const nameB = b.shortName || b.id;
-                return nameA.localeCompare(nameB);
-            });
-
-            // Add "Show All Nodes" option first
-            const allOption = document.createElement('option');
-            allOption.value = "";
-            allOption.textContent = "Show All Nodes";
-            select.appendChild(allOption);
-
-            // Add the sorted, linked nodes to the dropdown
-            sortedNodes.forEach(node => {
-                const option = document.createElement('option');
-                option.value = node.id;
-                option.textContent = node.shortName || node.id;
-                select.appendChild(option);
-            });
-        }
-		
-		function restartSimulation() {
-			if (!simulation) return;
-			const width = container.clientWidth;
-			const height = container.clientHeight;
-
-			// Reset positions and velocities for ALL nodes
-			simulation.nodes().forEach(node => {
-				node.x = Math.random() * width;
-				node.y = Math.random() * height;
-				node.vx = 0;
-				node.vy = 0;
-			});
-
-			// Reset simulation energy and restart
-			simulation.alpha(1).restart();
-		}
-        
-        /**
-         * Resets the graph to its initial state.
-         */
-        function resetView() {
-             currentTransform = d3.zoomIdentity;
-             const rootNodeId = document.getElementById('rootNodeSelect').value;
-             filterAndRenderGraph(rootNodeId !== "" ? parseInt(rootNodeId) : "");
-			 restartSimulation();
-        }
-
-        // Event listeners for file input and dropdown menu
-        document.getElementById('fileInput').addEventListener('change', function(evt) {
-            const file = evt.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const graph = JSON.parse(e.target.result);
-                    originalGraphData = graph;
-                    populateDropdown(graph.nodes);
-                    currentTransform = d3.zoomIdentity; // Reset zoom on new file upload
-                    filterAndRenderGraph(""); // Render the full graph initially
-                } catch (error) {
-                    console.error("Error parsing JSON file:", error);
-                    // Add a simple UI alert for the user
-                    const alertDiv = document.createElement('div');
-                    alertDiv.textContent = 'Error: Invalid JSON file. Please upload a valid file.';
-                    alertDiv.className = 'fixed top-4 right-4 p-4 rounded-md bg-red-500 text-white z-50';
-                    document.body.appendChild(alertDiv);
-                    setTimeout(() => alertDiv.remove(), 5000);
+            /**
+             * Animates the visible graph nodes and links into a globe view with tilt.
+             */
+            function AnimateNodesInGlobeView() {
+                const width = appState.container.clientWidth;
+                const height = appState.container.clientHeight;
+                const radius = Math.min(width, height) / 2.5;
+                const rotationSpeed = 0.009;
+                const tiltSpeed = 0.005;
+                let angle = 0;
+                let tiltAngle = 0;
+                
+                // Stop any existing simulation
+                if (appState.simulation) {
+                    appState.simulation.stop();
                 }
+
+                // Animate nodes and links
+                appState.globeInterval = d3.timer(elapsed => {
+					const showText = document.getElementById('toggleText').checked;
+                    const nodes = appState.g.selectAll(".nodes > g").data();
+                    if (!nodes.length) {
+                        return;
+                    }
+
+                    angle += rotationSpeed;
+                    tiltAngle += tiltSpeed;
+                    
+                    nodes.forEach((d, i) => {
+                        // Position nodes on a sphere
+                        const phi = Math.acos(-1 + (2 * i) / nodes.length);
+                        const theta = Math.sqrt(nodes.length * Math.PI) * phi;
+                        
+                        // Calculate base 3D coordinates
+                        const x_base = radius * Math.cos(theta) * Math.sin(phi);
+                        const y_base = radius * Math.sin(theta) * Math.sin(phi);
+                        const z_base = radius * Math.cos(phi);
+                        
+                        // Apply Z-axis rotation (spin)
+                        const x_rot_z = x_base * Math.cos(angle) - y_base * Math.sin(angle);
+                        const y_rot_z = y_base * Math.cos(angle) + x_base * Math.sin(angle);
+                        
+                        // Apply Y-axis tilt (wobble)
+                        const x_rot_y = x_rot_z * Math.cos(tiltAngle) + z_base * Math.sin(tiltAngle);
+                        const y_rot_y = y_rot_z;
+                        const z_rot_y = z_base * Math.cos(tiltAngle) - x_rot_z * Math.sin(tiltAngle);
+
+                        d.x = width / 2 + x_rot_y;
+                        d.y = height / 2 + y_rot_y;
+                        d.z = z_rot_y;
+                        d.vx = 0; // Stop node movement
+                        d.vy = 0;
+                    });
+                    
+                    // Update the positions and appearance of links and nodes
+                    appState.g.selectAll(".link")
+                        .attr("x1", d => d.source.x)
+                        .attr("y1", d => d.source.y)
+                        .attr("x2", d => d.target.x)
+                        .attr("y2", d => d.target.y);
+                    
+                    appState.g.selectAll(".nodes > g")
+                        .attr("transform", d => `translate(${d.x},${d.y}) scale(${1 + (d.z / radius) * 0.5})`);
+						//.attr("transform", d => `translate(${d.x},${d.y})`);
+                        
+                    appState.g.selectAll(".node-circle")
+                        .style("fill", d => {
+                            const color = d3.color(document.getElementById('nodeColor').value);
+                            // Adjust color based on depth: darker at the back, normal at the front.
+                            const darkeningFactor = 1.2 * (1 - d.z / radius); // Darkens as z decreases
+                            return color.darker(darkeningFactor);
+                        });
+                    
+					appState.g.selectAll(".node-text")
+						.style("opacity", d => (d.z > -100) ? (showText ? 1 : 0) : 0);
+                });
+            }
+
+            function dragstarted(d) {
+                if (!d3.event.active) appState.simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(d) {
+                d.fx = d3.event.x;
+                d.fy = d3.event.y;
+            }
+
+            function dragended(d) {
+                if (!d3.event.active) appState.simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+
+            /**
+             * Populates the dropdown menu with nodes.
+             * @param {Array<object>} nodes An array of all nodes.
+             */
+            function populateDropdown(nodes) {
+                const select = document.getElementById('rootNodeSelect');
+                select.innerHTML = '';
+                
+                const sortedNodes = [...nodes].sort((a, b) => {
+                    const nameA = a.shortName || a.id;
+                    const nameB = b.shortName || b.id;
+                    return nameA.localeCompare(nameB);
+                });
+
+                const allOption = document.createElement('option');
+                allOption.value = "";
+                allOption.textContent = "Show All Nodes";
+                select.appendChild(allOption);
+
+                sortedNodes.forEach(node => {
+                    const option = document.createElement('option');
+                    option.value = node.id;
+                    option.textContent = node.shortName || node.id;
+                    select.appendChild(option);
+                });
+            }
+
+            // ====================================================================================
+            // V. EVENT LISTENERS
+            // ====================================================================================
+            
+            /**
+             * Sets up all necessary event listeners for the UI controls.
+             */
+            function initEventListeners() {
+                document.getElementById('fileInput').addEventListener('change', (evt) => {
+                    const file = evt.target.files[0];
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const graph = JSON.parse(e.target.result);
+                            appState.originalGraphData = graph;
+                            populateDropdown(graph.nodes);
+                            appState.currentTransform = d3.zoomIdentity;
+                            filterAndRenderGraph("");
+                        } catch (error) {
+                            console.error("Error parsing JSON file:", error);
+                            const alertDiv = document.createElement('div');
+                            alertDiv.textContent = 'Error: Invalid JSON file. Please upload a valid file.';
+                            alertDiv.className = 'error-message';
+                            document.body.appendChild(alertDiv);
+                            setTimeout(() => alertDiv.remove(), 5000);
+                        }
+                    };
+                    reader.readAsText(file);
+                });
+
+                document.getElementById('rootNodeSelect').addEventListener('change', (evt) => {
+                    const rootNodeId = evt.target.value;
+                    filterAndRenderGraph(rootNodeId);
+                });
+                
+                document.getElementById('toggleDirection').addEventListener('change', (evt) => {
+                    appState.isTopToBottom = evt.target.checked;
+                    const rootNodeId = document.getElementById('rootNodeSelect').value;
+                    filterAndRenderGraph(rootNodeId);
+                });
+                
+                document.getElementById('toggleDisconnected').addEventListener('change', () => {
+                    const rootNodeId = document.getElementById('rootNodeSelect').value;
+                    filterAndRenderGraph(rootNodeId);
+                });
+                
+                document.getElementById('toggleGlobe').addEventListener('change', (evt) => {
+                    if (evt.target.checked) {
+                        AnimateNodesInGlobeView();
+                    } else {
+                        if (appState.globeInterval) {
+                            appState.globeInterval.stop();
+                            appState.globeInterval = null;
+                        }
+                        const rootNodeId = document.getElementById('rootNodeSelect').value;
+                        filterAndRenderGraph(rootNodeId);
+                        restartSimulation();
+                    }
+                });
+
+                document.getElementById('nodeSize').addEventListener('input', updateGraphStyles);
+                document.getElementById('nodeColor').addEventListener('input', updateGraphStyles);
+                document.getElementById('textColor').addEventListener('input', updateGraphStyles);
+                document.getElementById('linkColor').addEventListener('input', updateGraphStyles);
+                document.getElementById('linkThickness').addEventListener('input', updateGraphStyles);
+                document.getElementById('toggleText').addEventListener('change', updateGraphStyles);
+                document.getElementById('resetViewBtn').addEventListener('click', resetView);
+            }
+
+            // ====================================================================================
+            // VI. APPLICATION START
+            // ====================================================================================
+
+            // Start the application after the window has loaded
+            window.onload = function() {
+                initializeGraph();
+                initEventListeners();
             };
-            reader.readAsText(file);
-        });
-
-        document.getElementById('rootNodeSelect').addEventListener('change', function(evt) {
-            const rootNodeId = evt.target.value;
-            // Handle the empty string case before parsing
-            if (rootNodeId === "") {
-                filterAndRenderGraph("");
-            } else {
-                filterAndRenderGraph(parseInt(rootNodeId));
-            }
-        });
-        
-        // Event listener for the new direction toggle checkbox
-        document.getElementById('toggleDirection').addEventListener('change', function(evt) {
-            isTopToBottom = evt.target.checked;
-            const rootNodeId = document.getElementById('rootNodeSelect').value;
-             if (rootNodeId === "") {
-                filterAndRenderGraph("");
-            } else {
-                filterAndRenderGraph(parseInt(rootNodeId));
-            }
-        });
-        
-        // Event listener for the new disconnected node toggle checkbox
-        document.getElementById('toggleDisconnected').addEventListener('change', function(evt) {
-            const rootNodeId = document.getElementById('rootNodeSelect').value;
-            filterAndRenderGraph(rootNodeId);
-        });
-
-        // Event listeners for the new toolbar controls
-        document.getElementById('nodeSize').addEventListener('input', updateGraphStyles);
-        document.getElementById('nodeColor').addEventListener('input', updateGraphStyles);
-        document.getElementById('textColor').addEventListener('input', updateGraphStyles);
-        document.getElementById('linkColor').addEventListener('input', updateGraphStyles);
-        document.getElementById('linkThickness').addEventListener('input', updateGraphStyles);
-        document.getElementById('toggleText').addEventListener('change', updateGraphStyles);
-        document.getElementById('resetViewBtn').addEventListener('click', resetView);
+        })();
     </script>
 </body>
 </html>
